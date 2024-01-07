@@ -2,6 +2,7 @@ const express = require("express");
 const app = express();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
+const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const port = process.env.port || 5000;
 
@@ -21,14 +22,36 @@ const client = new MongoClient(uri, {
   },
 });
 
+const verifyJWT = (req, res, next) => {
+  console.log("hitting verify jwt");
+  console.log(req.headers.authorization);
+  const authorization = req.headers.authorization;
+  if (!authorization) {
+    return res
+      .status(401)
+      .send({ error: true, message: "Unauthorized access" });
+  }
+  const token = authorization.split(" ")[1];
+  console.log("TOKEN INSSIDE VERIFY", token);
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (error, decoded) => {
+    if (error) {
+      return res
+        .status(403)
+        .send({ error: true, message: "Unauthorized access" });
+    }
+    req.decoded = decoded;
+    next();
+  });
+};
+
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
 
     const galleryCollection = client.db("easyShop").collection("gallery");
-    const productsCollection = client.db("easyShop").collection("bestProducts");
-
+    const productsCollection = client.db("easyShop").collection("allProducts");
+    const myCollection = client.db("easyShop").collection("myProducts");
     //gallery data load
     app.get("/gallery", async (req, res) => {
       const query = galleryCollection.find();
@@ -36,15 +59,24 @@ async function run() {
       res.send(result);
     });
 
-    //bestProducts data load
+    //Products data load with searchTerm
 
     app.get("/products", async (req, res) => {
-      const query = productsCollection.find();
-      const result = await query.toArray();
+      const searchTerm = req.query.search;
+      let cursor;
+      if (searchTerm) {
+        cursor = productsCollection.find({
+          name: { $regex: searchTerm, $options: "i" },
+        });
+      } else {
+        cursor = productsCollection.find().limit(6);
+      }
+
+      const result = await cursor.toArray();
       res.send(result);
     });
 
-    //bestProducts data load single data read
+    //allProducts data load single data read
     app.get("/productsDetails/:id", async (req, res) => {
       const id = req.params.id;
       console.log(id);
@@ -61,6 +93,69 @@ async function run() {
       };
       const result = await productsCollection.findOne(query, options);
       res.send(result);
+    });
+
+    //my products
+    app.post("/myProducts", async (req, res) => {
+      const products = req.body;
+      // console.log(products);
+      const result = await myCollection.insertOne(products);
+      res.send(result);
+    });
+
+    // read data
+    app.get("/myProducts", verifyJWT, async (req, res) => {
+      const decoded = req.decoded;
+      console.log("come back after varify");
+
+      if (decoded.email !== req.query.email) {
+        return res.status(403).send({ error: 1, message: "forbidden access" });
+      }
+
+      let query = {};
+      if (req.query?.email) {
+        query = { email: req.query.email };
+      }
+      const result = await myCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    //update my products
+
+    app.patch("/myProducts/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const updatedProduct = req.body;
+      const updateDoc = {
+        $set: {
+          title: updatedProduct.title,
+          img: updatedProduct.img,
+          price: updatedProduct.price,
+          quantity: updatedProduct.quantity,
+          des: updatedProduct.des,
+          email: updatedProduct.email,
+        },
+      };
+
+      const result = await productsCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
+    //delete
+    app.delete("/myProducts/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await myCollection.deleteOne(query);
+      res.send(result);
+    });
+
+    app.post("/jwt", (req, res) => {
+      const user = req.body;
+      console.log(user);
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: "1h",
+      });
+      res.send({ token });
     });
 
     // Send a ping to confirm a successful connection
