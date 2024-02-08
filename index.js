@@ -77,7 +77,7 @@ async function run() {
     });
 
     //allProducts data load single data read
-    app.get("/productsDetails/:id", async (req, res) => {
+    app.get("/products/:id", async (req, res) => {
       const id = req.params.id;
       console.log(id);
       const query = { _id: new ObjectId(id) };
@@ -95,6 +95,18 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/services/:id", async (req, res) => {
+      const id = req.params.id;
+      console.log(id);
+      const query = { _id: new ObjectId(id) };
+      const options = {
+        // Include only the `title` and `imdb` fields in the returned document
+        projection: { title: 1, price: 1, service_id: 1 },
+      };
+      const result = await serviceCollection.findOne(query, options);
+      res.send(result);
+    });
+
     //my products
     app.post("/myProducts", async (req, res) => {
       const products = req.body;
@@ -104,14 +116,9 @@ async function run() {
     });
 
     // read data
-    app.get("/myProducts", verifyJWT, async (req, res) => {
-      const decoded = req.decoded;
-      console.log("come back after varify");
 
-      if (decoded.email !== req.query.email) {
-        return res.status(403).send({ error: 1, message: "forbidden access" });
-      }
-
+    app.get("/myProducts", async (req, res) => {
+      console.log(req.query.email);
       let query = {};
       if (req.query?.email) {
         query = { email: req.query.email };
@@ -122,7 +129,15 @@ async function run() {
 
     //update my products
 
-    app.patch("/myProducts/:id", async (req, res) => {
+    //update some data
+    app.get("/myProducts/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await myCollection.findOne(query);
+      res.send(result);
+    });
+
+    app.put("/myProducts/:id", async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
       const updatedProduct = req.body;
@@ -137,7 +152,7 @@ async function run() {
         },
       };
 
-      const result = await productsCollection.updateOne(filter, updateDoc);
+      const result = await myCollection.updateOne(filter, updateDoc);
       res.send(result);
     });
 
